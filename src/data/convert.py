@@ -1,17 +1,12 @@
-import chess.pgn
+import re
+import random
 import numpy as np
 from colorama import Fore, Style
-import random
-import re
+
+import chess.pgn
 
 
 class UCItoNetwork:
-
-    def __init__(self):
-        board_pos = np.empty(64, dtype=object)
-        board_pos[:] = list(np.ndindex(8, 8))
-        self.white_perspective = board_pos.reshape(8, 8)
-        self.black_perspective = self.white_perspective[::-1, ::-1]
 
     def generate_main_line(self, path):
         with open(path) as pgn:
@@ -21,8 +16,8 @@ class UCItoNetwork:
             del game
 
             for move in line:
-                x = self.create_nn_input(board)
-                y = self.move_as_nn_out(move, board.turn)
+                x = self.create_sample(board)
+                y = self._move_as_tensor(move, board.turn)
 
                 yield x, y, board.turn
 
@@ -45,8 +40,8 @@ class UCItoNetwork:
                 for move in line[:move_idx]:
                     board.push(move)
 
-                x = self.create_nn_input(board)
-                y = self.move_as_nn_out(line[move_idx], board.turn)
+                x = self.create_sample(board)
+                y = self._move_as_tensor(line[move_idx], board.turn)
 
                 yield x, y
 
@@ -59,33 +54,9 @@ class UCItoNetwork:
 
             # return np.stack(positions), np.stack(best_moves)
 
-    def get_n_best_moves(self, move, n, perspective):
-        perspective = 0 if perspective else 7
-        idx = np.argpartition(-move, n, None)[:n]
-
-        best_moves = []
-        if idx.any():
-            best_move_idx = np.unravel_index(idx, move.shape)
-            for move_idx in zip(*best_move_idx):
-                best_moves.append((move[move_idx], move_idx))
-        else:
-            raise ValueError
-
-        moves_as_string = []
-        for _, move_idx in reversed(sorted(best_moves)):
-            src_row = str(abs(move_idx[0] - perspective) + 1)
-            src_col = chr(abs(move_idx[1] - perspective) + ord('a'))
-
-            dest_row = str(abs(move_idx[2] - perspective) + 1)
-            dest_col = chr(abs(move_idx[3] - perspective) + ord('a'))
-
-            moves_as_string.append(src_col + src_row + dest_col + dest_row)
-
-        return moves_as_string
-
-    def create_nn_input(self, board):
+    def create_sample(self, board):
         colour = board.turn
-        white, black = self.position_as_nn_input(board, colour)
+        white, black = self._position_as_tensor(board, colour)
 
         p1, p2 = [white, black] if colour else [black, white]
 
@@ -103,7 +74,8 @@ class UCItoNetwork:
 
         return p1, p2, scalars
 
-    def position_as_nn_input(self, board, perspective):
+    # noinspection PyMethodMayBeStatic
+    def _position_as_tensor(self, board, perspective):
         perspective = 0 if perspective else 63
         white, black = np.zeros((8, 8, 6)), np.zeros((8, 8, 6))
         for k, v in board.piece_map().items():
@@ -113,10 +85,10 @@ class UCItoNetwork:
 
         return white, black
 
-    def move_as_nn_out(self, move, perspective):
+    # noinspection PyMethodMayBeStatic
+    def _move_as_tensor(self, move, perspective):
         perspective = 0 if perspective else 7
         notation = move.uci()
-
 
         src_row = abs((int(notation[1]) - 1) - perspective)
         src_col = abs((ord(notation[0]) - ord('a')) - perspective)
@@ -131,10 +103,12 @@ class UCItoNetwork:
 
 
 def print_human_readable(possible_moves, perspective):
+    np.set_printoptions(precision=3, threshold=np.nan, linewidth=np.inf)
+
     if len(possible_moves.shape) == 4:
         if perspective:
             perspective = not perspective
-            possible_moves = np.flip(np.flip(possible_moves, axis=perspective), axis=perspective+2)
+            possible_moves = np.flip(np.flip(possible_moves, axis=perspective), axis=perspective + 2)
         for i in range(8):
             pos_repr = np.array2string(possible_moves[i], sign=' ', threshold=100, max_line_width=np.inf).split('\n')
             rows = [
@@ -178,6 +152,9 @@ def print_human_readable(possible_moves, perspective):
 
     print(Fore.RED + ''.join(legend), end='')
     print(Style.RESET_ALL + '\n')
+    np.set_printoptions(edgeitems=3, infstr='inf',
+                        linewidth=75, nanstr='nan', precision=8,
+                        suppress=False, threshold=1000, formatter=None)
 
 
 if __name__ == '__main__':
@@ -186,8 +163,8 @@ if __name__ == '__main__':
     some_pgn = '../resources/pgn_data/stockfish_jonny_2014.pgn'
 
     converter = UCItoNetwork()
-    #test = converter.generate_random_samples_from_game(some_pgn)
-    #next(test)
+    # test = converter.generate_random_samples_from_game(some_pgn)
+    # next(test)
 
     with open(some_pgn) as pgn_file:
         chess_game = chess.pgn.read_game(pgn_file)
@@ -203,11 +180,10 @@ if __name__ == '__main__':
         colour = 1
         for mo in tail:
             print(mo.uci())
-            p1, p2 = converter.position_as_nn_input(board_state, colour)
+            p1, p2 = converter._position_as_tensor(board_state, colour)
             print_human_readable(p1 + p2, None)
-            best_move = converter.move_as_nn_out(mo, colour)
+            best_move = converter._move_as_tensor(mo, colour)
 
-            converter.get_n_best_moves(best_move, 3, colour)
             print_human_readable(best_move, None)
 
             print(board_state.fullmove_number)

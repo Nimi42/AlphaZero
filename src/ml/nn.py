@@ -1,7 +1,7 @@
 from keras import losses
 from keras.layers import Input, Add, Dense, Conv2D, Activation, BatchNormalization, Flatten, \
     MaxPooling2D, Reshape, Concatenate
-from keras.models import Model, load_model
+from keras.models import Model
 
 from keras.initializers import glorot_uniform
 import tensorflow as tf

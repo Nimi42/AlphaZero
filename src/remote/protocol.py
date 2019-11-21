@@ -3,15 +3,14 @@ import select
 from functools import partial
 import chess
 from keras.models import load_model
-from converter import UCItoNetwork
+from data.convert import UCItoNetwork
 
 # Use Timer to force the engine to return a result
 # Might want to put it inside the engine
-from threading import Timer
+from data.ml_utils import get_n_best_moves
 
 
-class UCIInterface:
-
+class UCI:
     UCI = 'uci'
     UCI_OK = 'uciok'
 
@@ -31,11 +30,11 @@ class UCIInterface:
         self.moves = None
         self.terminated = False
         self.protocol = {
-            UCIInterface.UCI: partial(self.send_response, UCIInterface.UCI_OK),
-            UCIInterface.NEW_GAME: self.new_game,
-            UCIInterface.IS_READY: partial(self.send_response, UCIInterface.READY_OK),
-            UCIInterface.POSITION: self.setup_pos,
-            UCIInterface.GO: self.calculate
+            UCI.UCI: partial(self.send_response, UCI.UCI_OK),
+            UCI.NEW_GAME: self.new_game,
+            UCI.IS_READY: partial(self.send_response, UCI.READY_OK),
+            UCI.POSITION: self.setup_pos,
+            UCI.GO: self.calculate
         }
 
         self.model = load_model('/home/nemo/Downloads/omega_one.h5')
@@ -98,10 +97,10 @@ class UCIInterface:
 
         command, *args = args
 
-        if command.lower() == UCIInterface.STARTPOS:
+        if command.lower() == UCI.STARTPOS:
             if args:
                 command, *moves = args
-                if command.lower() == UCIInterface.MOVES:
+                if command.lower() == UCI.MOVES:
                     if self.moves == moves[:-1]:
                         self.board.push(chess.Move.from_uci(moves[-1]))
                     else:
@@ -116,12 +115,12 @@ class UCIInterface:
     def calculate(self, args):
         params_dict = self.unravel_args(args)
 
-        x = self.converter.create_nn_input(self.board)
+        x = self.converter.create_sample(self.board)
         pred = self.model.predict(
             [item[None] for item in x],  # np.stack(history)[None],
             batch_size=1)
 
-        moves = self.converter.get_n_best_moves(pred[0], 5, self.board.turn)
+        moves = get_n_best_moves(pred[0], 5, self.board.turn)
 
         for move in moves:
             if self.board.is_legal(chess.Move.from_uci(move)):
@@ -137,7 +136,7 @@ class UCIInterface:
         return dict(zip(keys, values))
 
 
-interface = UCIInterface()
-while not interface.terminated:
-    interface.read_input()
+connection = UCI()
+while not connection.terminated:
+    connection.read_input()
 

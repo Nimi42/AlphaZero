@@ -1,5 +1,5 @@
-from nn import chess_conv
-from data import data_generator
+from ml.nn import chess_conv
+from data.ml_utils import batch_generator
 
 
 def train(model, gen):
@@ -9,7 +9,7 @@ def train(model, gen):
 if __name__ == '__main__':
     path = "../resources/pgn_data/stockfish_jonny_2014.pgn"
 
-    gen = data_generator('../resources/pgn_data', 64)
+    gen = batch_generator('../resources/pgn_data', 64)
     model = chess_conv()
 
     train(model, gen)
