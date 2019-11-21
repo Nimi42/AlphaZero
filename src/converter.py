@@ -22,7 +22,7 @@ class UCItoNetwork:
 
             for move in line:
                 x = self.create_nn_input(board)
-                y = self.move_as_nn_out(move, colour)
+                y = self.move_as_nn_out(move, board.turn)
 
                 yield x, y, board.turn
 
@@ -46,7 +46,7 @@ class UCItoNetwork:
                     board.push(move)
 
                 x = self.create_nn_input(board)
-                y = self.move_as_nn_out(line[move_idx], colour)
+                y = self.move_as_nn_out(line[move_idx], board.turn)
 
                 yield x, y
 
@@ -130,7 +130,6 @@ class UCItoNetwork:
         return best_move
 
 
-
 def print_human_readable(possible_moves, perspective):
     if len(possible_moves.shape) == 4:
         if perspective:
@@ -184,7 +183,7 @@ def print_human_readable(possible_moves, perspective):
 if __name__ == '__main__':
     np.set_printoptions(edgeitems=10000000, threshold=100, linewidth=np.inf)
     np.core.arrayprint._line_width = 10000000
-    some_pgn = '/home/nemo/PycharmProjects/AlphaZero/engines/resources/pgn_data/stockfish_jonny_2014.pgn'
+    some_pgn = '../resources/pgn_data/stockfish_jonny_2014.pgn'
 
     converter = UCItoNetwork()
     #test = converter.generate_random_samples_from_game(some_pgn)

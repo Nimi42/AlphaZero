@@ -14,10 +14,10 @@ import numpy as np
 np.set_printoptions(edgeitems=10000000, threshold=100, linewidth=np.inf)
 np.core.arrayprint._line_width = 10000000
 
-model = load_model('/home/nemo/Downloads/omega_one.h5')
+model = load_model('../build/policy.h5')
 model.summary()
 
-path = '/home/nemo/PycharmProjects/AlphaZero/engines/resources/pgn_data/stockfish_jonny_2014.pgn'
+path = '../resources/pgn_data/stockfish_jonny_2014.pgn'
 
 with open(path) as pgn:
     converter = UCItoNetwork()

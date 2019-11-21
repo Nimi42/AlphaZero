@@ -2,32 +2,10 @@ import os
 import numpy as np
 import random
 
-from pgn import UCItoNetwork
-
-
-# def get_data():
-#     path = '../../resources/pgn_data'
-#
-#     positions = []
-#     moves = []
-#     for file in os.listdir(path):
-#         pgn_path = os.path.join(path, file)
-#
-#         pos, move = convert_random_move(pgn_path)
-#
-#         positions.append(pos)
-#         moves.append(move)
-#
-#         pos, move = convert_random_move(pgn_path, WHITE)
-#
-#         positions.append(pos)
-#         moves.append(move)
-#
-#     return np.vstack(positions), np.vstack(moves)
+from converter import UCItoNetwork
 
 
 def data_generator(path, batch_size):
-    path = '../../resources/pgn_data'
     converter = UCItoNetwork()
 
     while True:
