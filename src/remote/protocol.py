@@ -12,6 +12,7 @@ from data.ml_utils import get_n_best_moves
 
 class UCI:
     UCI = 'uci'
+    SET_OPTION = 'setoption'
     UCI_OK = 'uciok'
 
     NEW_GAME = 'ucinewgame'
@@ -25,21 +26,23 @@ class UCI:
 
     GO = 'go'
 
+    QUIT = 'quit'
+
     def __init__(self):
         self.board = None
         self.moves = None
         self.terminated = False
         self.protocol = {
+            UCI.SET_OPTION: lambda x: x,
             UCI.UCI: partial(self.send_response, UCI.UCI_OK),
             UCI.NEW_GAME: self.new_game,
             UCI.IS_READY: partial(self.send_response, UCI.READY_OK),
-            UCI.POSITION: self.setup_pos,
-            UCI.GO: self.calculate
+            UCI.POSITION: self.setup_position,
+            UCI.GO: self.calculate,
+            UCI.QUIT: self.shutdown
         }
 
-        self.model = load_model('/home/nemo/Downloads/omega_one.h5')
-        self.model.summary()
-
+        self.model = load_model('/home/nemo/Downloads/omega_one.h5', compile=False)
         self.converter = UCItoNetwork()
 
     def read_input(self, stream=sys.stdin, timeout=None):
@@ -92,7 +95,7 @@ class UCI:
     def next_position(self, fen):
         pass
 
-    def setup_pos(self, args=None):
+    def setup_position(self, args=None):
         assert args is not None
 
         command, *args = args
@@ -108,9 +111,9 @@ class UCI:
                         for move in moves:
                             self.board.push(chess.Move.from_uci(move))
 
-                            print(self.board, file=sys.stderr)
-                            sys.stderr.flush()
                     self.moves = moves
+            else:
+                self.board = chess.Board()
 
     def calculate(self, args):
         params_dict = self.unravel_args(args)
