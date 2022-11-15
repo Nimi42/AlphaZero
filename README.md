@@ -10,8 +10,6 @@ $$
 \end{align}
 $$
 
-asd
-
 $$
 \begin{align*}
     UCB1 \Rightarrow&& w_i &= \sum^{s_i}_j y_j & \bigg|& \quad y_j =   
