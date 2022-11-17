@@ -5,21 +5,17 @@ import numpy as np
 from scipy.signal import convolve2d
 from tabulate import tabulate
 
-from mcts_bak import MCTS, Node, Reward
-from mcts import MCTS, Node
+from mcts import Node, MCTS, Mode
 
 
 class TicTacToeDummyPolicy:
 
-    def _predict(self, game_state):
-        prediction = np.zeros_like(game_state.board)
+    def predict(self, game_state):
+        predictions = np.zeros_like(game_state.board)
         mask_zero = game_state.board == 0
         probability = 1 / np.count_nonzero(mask_zero)
-        prediction[mask_zero] = probability
-        return prediction
+        predictions[mask_zero] = probability
 
-    def generate_possible_moves(self, game_state):
-        predictions = self._predict(game_state)
         shape = predictions.shape
         predictions = predictions.flatten()
         for i in range(predictions.shape[0]):
@@ -60,19 +56,26 @@ class TicTacToe:
 
         for k in TicTacToe.KERNEL:
             if np.any(convolve2d(self.board, k, mode="valid") == condition):
-                self.reward = Reward(-self.current_player, Reward.WIN)
+                self.reward = -self.current_player
                 return True
 
         if np.count_nonzero(self.board == 0) == 0:
-            self.reward = Reward(0, Reward.DRAW)
+            self.reward = 0
             return True
 
         return False
 
     def get_reward(self):
-        if self.reward is None:
-            raise ValueError("Game State has never terminated.")
-        return self.reward
+        condition = -3
+
+        for k in TicTacToe.KERNEL:
+            if np.any(convolve2d(self.board, k, mode="valid") == condition):
+                return -self.current_player
+
+        if np.count_nonzero(self.board == 0) == 0:
+            return 0
+
+        return None
 
     def get_canonical_board(self):
         return self.board * self.current_player
@@ -84,17 +87,17 @@ class TicTacToe:
 if __name__ == '__main__':
     game = TicTacToe()
     model = TicTacToeDummyPolicy()
+    mcts = MCTS(model, 100000, Mode.MCTS)
+    node = Node(0, game)
 
-    mcts = MCTS(model, 10000)
-    node = Node(0, game, model.generate_possible_moves(game))
-
-    while not node.is_terminal:
+    while node.game_state.get_reward() is None:
         print(node.game_state)
         prev, node = mcts.search(node)
 
+        del prev
+
     print(node.game_state)
     print('End')
-
 
     # TODO: Clean up Code
     #   - Switch view of player on board and fix mcts algorithm to fit. (It's easier for a machine learning network to
