@@ -1,13 +1,10 @@
-from time import sleep
 from typing import Type, List
 
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.nn import Softmax
-from torch.nn.functional import softmax
 from torch import Tensor
-from torchsummary import summary
+from torch.nn.functional import softmax
 
 devices = [torch.cuda.device(i) for i in range(torch.cuda.device_count())]
 print(devices)
@@ -34,11 +31,11 @@ class BasicBlock(nn.Module):
     expansion: int = 1
 
     def __init__(
-        self,
-        inplanes: int,
-        planes: int,
-        stride: int = 1,
-        downsample = None,
+            self,
+            inplanes: int,
+            planes: int,
+            stride: int = 1,
+            downsample=None,
     ) -> None:
         super().__init__()
         # Both self.conv1 and self.downsample layers downsample the input when stride != 1
@@ -71,9 +68,10 @@ class BasicBlock(nn.Module):
 
 class ResNet(nn.Module):
 
-    def __init__(self, block: Type[BasicBlock], layers: List[int], num_classes: int = 9, zero_init_residual: bool = False,) -> None:
+    def __init__(self, block: Type[BasicBlock], layers: List[int], num_classes: int, device,
+                 zero_init_residual: bool = False, ) -> None:
         super().__init__()
-
+        self.device = device
         self.inplanes = 64
         self.conv1 = nn.Conv2d(1, self.inplanes, kernel_size=3, stride=1, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(self.inplanes)
@@ -123,6 +121,7 @@ class ResNet(nn.Module):
     def forward(self, x: Tensor) -> tuple[Tensor, Tensor]:
         # See note [TorchScript super()]
         x = self.conv1(x)
+
         x = self.bn1(x)
         x = self.relu(x)
 
@@ -138,28 +137,16 @@ class ResNet(nn.Module):
     def predict(self, s):
         with torch.no_grad():
             board = torch.FloatTensor(s.board)
-            size = board.shape
-            board = board.view(1, 1, *size)
+            board = board.view(1, 1, *board.shape).to(self.device)
 
             pi, v = self.forward(board)
             pi, v = pi.squeeze(), v.item()
 
-            mask = s.get_valid_moves().flatten()
-            pi = softmax(pi, dim=0).numpy()
+            pi = softmax(pi, dim=0).detach().cpu().numpy()
+            mask = s.get_valid_moves()
+            size = mask.shape
+            mask = mask.flatten()
             pi[~mask] = 0
             pi /= pi.sum()
 
             return ((np.unravel_index(i, size), pi[i]) for i in range(pi.shape[0]) if pi[i] > 0), v
-
-
-if __name__ == '__main__':
-    model = ResNet(BasicBlock, [2, 2, 2, 2])
-    summary(model, (1, 3, 3))
-
-    # x = np.arange(9).reshape(3, 3)
-    # print(x)
-    # pi, v = model.predict(x)
-    # print(pi)
-    # print(v)
-
-

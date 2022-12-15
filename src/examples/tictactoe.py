@@ -3,78 +3,13 @@ from __future__ import annotations
 from typing import Tuple
 
 import numpy as np
-import torch
 from tabulate import tabulate
 
-from mcts import Node, MCTS, SearchType
-from tictactoe.model import ResNet, BasicBlock
-from train.self_play import Agent
-from train.train_model import run_training
-from util.data import IO
+from architecture.model import ResNet, BasicBlock
 
 
-def run_mcts():
-    game = TicTacToe()
-    model = TicTacToeDummyPolicy()
-    mcts = MCTS(model, 100, SearchType.MCTS)
-    node = Node(0, game)
-
-    while node.game_state.get_reward() is None:
-        print(node.game_state)
-        prev, node = mcts.search(node)
-
-    print(node.game_state)
-    print('End')
-
-    # import cProfile, pstats
-    # profiler = cProfile.Profile()
-    # profiler.enable()
-    # profiler.disable()
-    # stats = pstats.Stats(profiler).strip_dirs().sort_stats('cumtime')
-    # stats.print_stats()
-
-
-def eval_alphazero():
-    io = IO('TicTacToe')
-    game = TicTacToe()
-    model = ResNet(BasicBlock, [2, 2, 2])
-
-    if not io.load_model(model):
-        raise FileNotFoundError('No model has been found')
-
-    model.eval()
-    mcts = MCTS(model, 1500, SearchType.AlphaZero)
-
-    with torch.no_grad():
-        while game.get_reward() is None:
-            print(game)
-            root, action = mcts.search(game)
-            game = game.take_action(action)
-
-    print(game)
-    print('End')
-
-
-def train_alphazero(steps: int):
-    io = IO('TicTacToe')
-    game = TicTacToe()
-    model = ResNet(BasicBlock, [2, 2, 2])
-    if not io.load_model(model):
-        print('Training new model')
-    agent = Agent(game, model)
-
-    for i in range(steps):
-        model.eval()
-        with torch.no_grad():
-            train_data = agent.create_train_data(num_games=20)
-            io.save_and_split_data(train_data)
-
-        train, valid = io.load_dataset()
-        model.train()
-        run_training(model, train, valid, max_epochs=10)
-
-        io.clear_data()
-        io.save_model(model)
+def create_policy(device):
+    return ResNet(BasicBlock, [2, 2, 2], 9, device)
 
 
 class TicTacToeDummyPolicy:
@@ -150,9 +85,8 @@ class TicTacToe:
         return self.board * self.current_player
 
     def __str__(self) -> str:
-        return tabulate(self.get_canonical_board(), tablefmt="fancy_grid")
-
-
-if __name__ == '__main__':
-    train_alphazero(100)
-    # eval_alphazero()
+        x = self.get_canonical_board().astype(object)
+        x[x == 1] = 'X'
+        x[x == 0] = '_'
+        x[x == -1] = 'O'
+        return tabulate(x, tablefmt="fancy_grid")

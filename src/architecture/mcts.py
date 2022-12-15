@@ -2,8 +2,6 @@ import math
 import random
 from enum import Enum
 from typing import Any, Tuple, List, Dict
-from prettytable import PrettyTable
-import torchvision.transforms.functional
 
 import numpy as np
 
@@ -34,35 +32,26 @@ class MCTS:
     def __init__(self, model, iteration_limit, mode: SearchType):
         self.iteration_limit = iteration_limit
         self.model = model
-        self.table = None
+        self.mode = mode
 
         match mode:
             case SearchType.MCTS:
                 self._playout = self._rollout
                 self._score_func = self._ucb_score
             case SearchType.AlphaZero:
-                self._playout = self._evaluate
+                self._playout = self.model.predict
                 self._score_func = self._puct_score
 
-                # rng = np.random.default_rng()
-                # self.dirichlet = rng.dirichlet
-                # self.noise = None
         self.mode = mode
 
     def search(self, s, train: bool = False) -> Any:
         root = Node(0, s)
-
-        if not root.is_expanded():
+        if self.mode == SearchType.AlphaZero:
             π, _ = self.model.predict(root.game_state)
-            π = list(π)
-            self.table = PrettyTable([i for i, _ in π])
-            self.table.add_row(["%.4f" % p for _, p in π])
             self._expand(root, π)
 
         if train:
             self.add_dirichletnoise(root)
-
-        print(self.table)
 
         for _ in range(self.iteration_limit):
             self._execute_round(root)
@@ -78,12 +67,12 @@ class MCTS:
             _, node = self._select(node, self._score_func)
             search_path.append(node)
 
-        value = node.game_state.get_reward()
-        if value is None:
-            probabilities, value = self._playout(node.game_state)
-            self._expand(node, probabilities)
+        v = node.game_state.get_reward()
+        if v is None:
+            π, v = self._playout(node.game_state)
+            self._expand(node, π)
 
-        self._backpropogate(search_path, to_play, value)
+        self._backpropogate(search_path, to_play, v)
 
     def _select(self, parent, score_func) -> Tuple[Any, Node]:
         best_score = -np.inf
@@ -100,8 +89,8 @@ class MCTS:
 
         return random.choice(best_child)
 
-    def _expand(self, node: Node, probabilities):
-        for action, probability in probabilities:
+    def _expand(self, node: Node, π):
+        for action, probability in π:
             new_game_state = node.game_state.take_action(action)
             new_node = Node(probability, new_game_state)
             node.children[action] = new_node
@@ -113,33 +102,27 @@ class MCTS:
             to_play *= -1
 
     def _rollout(self, game_state) -> Any:
-        probabilities, _ = self.model.predict(game_state)
+        π, _ = self.model.predict(game_state)
         reward = game_state.get_reward()
         while reward is None:
             action = self.model.get_best_action(game_state)
             game_state = game_state.take_action(action)
             reward = game_state.get_reward()
-        return probabilities, reward
-
-    def _evaluate(self, game_state) -> Any:
-        # TODO: A neural network will at this point evaluate the given position and return
-        #   actions their probabilities and a value for the given state
-        return self.model.predict(game_state)
+        return π, reward
 
     def add_dirichletnoise(self, root):
-        α = 2
+        α = 0.6
         ε = 0.75
         rng = np.random.default_rng()
         valid_moves = root.game_state.get_valid_moves()
         noise = rng.dirichlet([α] * np.count_nonzero(valid_moves))
-        self.table.add_row(["%.4f" % η for η in noise])
         for child, η in zip(root.children.values(), noise):
             child.P_sa = (ε * child.P_sa + (1 - ε) * η)
 
     @staticmethod
     def _puct_score(parent: Node, child: Node):
         c = 2
-        prior_score = c * child.P_sa * math.sqrt(parent.N_sa-1) / (1 + child.N_sa)
+        prior_score = c * child.P_sa * math.sqrt(parent.N_sa - 1) / (1 + child.N_sa)
         return child.Q_sa + prior_score
 
     @staticmethod
