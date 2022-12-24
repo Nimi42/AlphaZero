@@ -1,7 +1,8 @@
+import itertools
 import math
 import random
 from enum import Enum
-from typing import Any, Tuple, List, Dict
+from typing import Any, Tuple, List, Union
 
 import numpy as np
 
@@ -13,12 +14,19 @@ class Node:
         self.P_sa: float = prior
         self.N_sa: int = 0
         self.Q_sa: int = 0
-        self.children: Dict = {}
+        self.children: List[Node] = []
 
         self.game_state = game_state
 
     def is_expanded(self):
         return True if self.children else False
+
+
+class ResultNode(Node):
+
+    def __init__(self, prior, game_state):
+        super().__init__(prior, game_state)
+        self.action = None
 
 
 class SearchType(Enum):
@@ -32,39 +40,39 @@ class MCTS:
     def __init__(self, model, iteration_limit, mode: SearchType):
         self.iteration_limit = iteration_limit
         self.model = model
-        self.mode = mode
 
-        match mode:
-            case SearchType.MCTS:
-                self._playout = self._rollout
-                self._score_func = self._ucb_score
-            case SearchType.AlphaZero:
-                self._playout = self.model.predict
-                self._score_func = self._puct_score
-
-        self.mode = mode
+        if mode == SearchType.MCTS:
+            self._playout = self._rollout
+            self._score_func = self._ucb_score
+        elif mode == SearchType.AlphaZero:
+            self._playout = self.model.predict
+            self._score_func = self._puct_score
 
     def search(self, s, train: bool = False) -> Any:
-        root = Node(0, s)
-        if self.mode == SearchType.AlphaZero:
-            π, _ = self.model.predict(root.game_state)
-            self._expand(root, π)
+        root = ResultNode(0, s)
+        π, _ = self.model.predict(root.game_state)
+        for action, probability in π:
+            new_game_state = root.game_state.take_action(action)
+            new_node = ResultNode(probability, new_game_state)
+            new_node.action = action
+            root.children.append(new_node)
 
         if train:
             self.add_dirichletnoise(root)
 
-        for _ in range(self.iteration_limit):
+        for _ in itertools.repeat(None, self.iteration_limit):
             self._execute_round(root)
 
-        action, child = self._select(root, self._most_visits)
-        return root, action
+        best_child: ResultNode = self._select(root, self._most_visits)
+        root.action = best_child.action
+        return root
 
     def _execute_round(self, node: Node) -> None:
         search_path = []
         to_play = node.game_state.current_player
         node.N_sa += 1
         while node.is_expanded():
-            _, node = self._select(node, self._score_func)
+            node = self._select(node, self._score_func)
             search_path.append(node)
 
         v = node.game_state.get_reward()
@@ -74,18 +82,18 @@ class MCTS:
 
         self._backpropogate(search_path, to_play, v)
 
-    def _select(self, parent, score_func) -> Tuple[Any, Node]:
+    def _select(self, parent, score_func) -> Union[Node, ResultNode]:
         best_score = -np.inf
         best_child = []
 
-        for action, child in parent.children.items():
+        for child in parent.children:
             score = score_func(parent, child)
 
             if score > best_score:
                 best_score = score
-                best_child = [(action, child)]
+                best_child = [child]
             elif score == best_score:
-                best_child.append((action, child))
+                best_child.append(child)
 
         return random.choice(best_child)
 
@@ -93,7 +101,7 @@ class MCTS:
         for action, probability in π:
             new_game_state = node.game_state.take_action(action)
             new_node = Node(probability, new_game_state)
-            node.children[action] = new_node
+            node.children.append(new_node)
 
     def _backpropogate(self, search_path: List[Node], to_play, reward: Any) -> None:
         for node in search_path:
@@ -116,7 +124,7 @@ class MCTS:
         rng = np.random.default_rng()
         valid_moves = root.game_state.get_valid_moves()
         noise = rng.dirichlet([α] * np.count_nonzero(valid_moves))
-        for child, η in zip(root.children.values(), noise):
+        for child, η in zip(root.children, noise):
             child.P_sa = (ε * child.P_sa + (1 - ε) * η)
 
     @staticmethod

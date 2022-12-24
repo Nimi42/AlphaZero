@@ -1,87 +1,86 @@
+import itertools
 import time
-from multiprocessing import Process, Queue
+from pprint import pprint
 
 import numpy as np
-import torch
+import ray, torch
 import torch.nn as nn
+from ray.util.placement_group import placement_group, PlacementGroupSchedulingStrategy, remove_placement_group
+from ray.util.queue import Queue
+from copy import deepcopy
 
 from architecture.mcts import MCTS, SearchType
 from util.data import print_one_line
 
 
 def generate_data(s, model_cls, params, num_games):
-    task_queue = Queue()
+    bundles = []
+    tasks = []
+
+    # Create a placement group.
+    gpu_decorator = ray.remote(num_cpus=4, num_gpus=1)
+    cpu_decorator = ray.remote(num_cpus=4)
+    for node in ray.nodes():
+        if node['Alive']:
+            if 'GPU' in node['Resources']:
+                tasks.append(gpu_decorator(Worker))
+                bundles.append({'CPU': 4, 'GPU': 1})
+            else:
+                bundles.append({'CPU': 4})
+                tasks.append(cpu_decorator(Worker))
+    print(bundles)
+    pg = placement_group(bundles=bundles, strategy="STRICT_SPREAD")
+    ray.get(pg.ready())
+
+    task_queue = Queue(maxsize=num_games)
     for i in range(num_games):
         task_queue.put(i)
 
-    return_queue = Queue()
-    workers = []
-
-    device = 'cpu'
-    for i in range(torch.cuda.device_count() + 1):
-        task_queue.put(None)
-
-        model: nn.Module = model_cls(device)
-        model.load_state_dict(params)
-        model.to(device)
-
-        worker = Worker(s, model, task_queue, return_queue)
-        worker.start()
-        workers.append(worker)
-
-        device = 'cuda:' + str(i)
+    for i, t in enumerate(tasks):
+        tasks[i] = t\
+            .options(scheduling_strategy=PlacementGroupSchedulingStrategy(placement_group=pg))\
+            .remote(s, model_cls, params, task_queue)
 
     start = time.time()
-
-    res = []
-    for i in range(num_games):
-        res.append(return_queue.get())
-
-    for worker in workers:
-        worker.join()
-
+    result = ray.get([t.run.remote() for t in tasks])
     print(time.time() - start)
-    return res
+    remove_placement_group(pg)
+    return itertools.chain(*result)
 
 
-class Worker(Process):
-
-    def __init__(self, s, model, task_queue: Queue, return_queue: Queue):
-        super().__init__(daemon=True)
-        self.s = s
-        self.model = model
-
+class Worker:
+    def __init__(self, s, model_cls, params, task_queue: Queue):
+        self.s = deepcopy(s)
         self.task_queue = task_queue
-        self.return_queue = return_queue
 
-    def run(self) -> None:
-        if self.model.device == 'cpu':
-            torch.set_num_threads(1)
+        device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+        self.model: nn.Module = model_cls(device)
+        self.model.load_state_dict(params)
+        self.model.to(device)
 
+    def run(self):
         self.model.eval()
         with torch.no_grad():
-            mcts = MCTS(self.model, 1000, SearchType.AlphaZero)
+            mcts = MCTS(self.model, 2000, SearchType.AlphaZero)
+            result = []
 
-            while True:
-                item = self.task_queue.get(block=False)
-                if item is None:
-                    print(self.model.device)
-                    break
+            while not self.task_queue.empty():
+                item = self.task_queue.get(block=True)
 
                 train_data = []
                 print_moves = []
 
                 s = self.s
                 while s.get_reward() is None:
-                    root, action = mcts.search(s, train=True)
+                    root = mcts.search(s, train=True)
 
-                    s = s.take_action(action)
+                    s = s.take_action(root.action)
                     print_moves.append(str(s))
                     probabilities = root.game_state.get_emptyboard()
 
-                    for action, child in root.children.items():
+                    for child in root.children:
                         prob = child.N_sa / root.N_sa
-                        probabilities[action] = prob
+                        probabilities[child.action] = prob
 
                     probabilities /= np.sum(probabilities)
                     train_data.append((root.game_state, probabilities))
@@ -92,4 +91,5 @@ class Worker(Process):
                               for game, probs in train_data]
                 print_one_line(print_moves)
 
-                self.return_queue.put(train_data)
+                result.append(train_data)
+            return result

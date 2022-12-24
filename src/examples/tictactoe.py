@@ -5,7 +5,7 @@ from typing import Tuple
 import numpy as np
 from tabulate import tabulate
 
-from architecture.model import ResNet, BasicBlock
+from architecture.policy import ResNet, BasicBlock
 
 
 def create_policy(device):

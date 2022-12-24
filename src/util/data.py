@@ -16,7 +16,9 @@ while _DATA_DIR.stem != _PROJECT_NAME:
     try:
         _DATA_DIR = _DATA_DIR.parents[0]
     except IndexError:
-        raise NotADirectoryError('Project root - ' + _PROJECT_NAME + ' - does not exist')
+        _DATA_DIR = Path(__file__)
+        break
+        #raise NotADirectoryError('Project root - ' + _PROJECT_NAME + ' - does not exist')
 _DATA_DIR /= 'data'
 
 # Numpy data saved as .npy with following keys
